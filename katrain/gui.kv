@@ -738,6 +738,11 @@
         shortcut: 'd'
         on_action: root.katrain("analyze-extra", "sweep")
     AnalysisMenuItem:
+        text: i18n._("analysis:nsweep")
+        icon: 'Sweep.png'
+        shortcut: 'n'
+        on_action: root.katrain("analyze-extra", "nsweep")
+    AnalysisMenuItem:
         text: i18n._("analysis:alternatives")
         icon: 'Alternative.png'
         shortcut: 'f'
@@ -783,6 +788,8 @@
     policy: policy
     hints: hints
     ownership: ownership
+    ndiffp: ndiffp
+    ndiffo: ndiffo
     analysis_button: analysis_button
     hamburger: hamburger
     HamburgerButton:
@@ -811,6 +818,12 @@
             AnalysisToggle:
                 id: ownership
                 text: i18n._('analysis:territory')
+            AnalysisToggle:
+                id: ndiffp
+                text: i18n._('analysis:ndiffp')
+            AnalysisToggle:
+                id: ndiffo
+                text: i18n._('analysis:ndiffo')
                 padding: 0,0,show_children.width/8,0 # space button a bit more
             MDFloatLayout:
                 width: analysis_button.width

@@ -539,6 +539,9 @@ class Game:
             visits = engine.config["fast_visits"]
             self.katrain.controls.set_status(i18n._("sweep analysis").format(visits=visits), STATUS_ANALYSIS)
             priority = -1_000_000_000
+        elif mode == "nsweep":
+            self.analyze_neighbour_states()
+            return
         elif mode in ["equalize", "alternative", "local"]:
             if not cn.analysis_complete and mode != "local":
                 self.katrain.controls.set_status(i18n._("wait-before-extra-analysis"), STATUS_INFO, self.current_node)
@@ -559,6 +562,65 @@ class Game:
                 cn.analyze(
                     engine, priority=priority, visits=visits, refine_move=move, time_limit=False
                 )  # explicitly requested so take as long as you need
+
+    def analyze_neighbour_states(self):
+        cn = self.current_node
+        stones = {s.coords for s in self.stones}
+        
+        board_size_x, board_size_y = self.board_size
+        analyze_moves = [
+            Move(coords=(x, y), player=cn.player)
+            for x in range(board_size_x)
+            for y in range(board_size_y)
+            if (x, y) not in stones 
+        ]
+        analyze_moves.append(cn.move)
+            
+        analyze_moves_pairs = [
+            (m, Move(coords=(x, y), player=cn.next_player)) 
+            for m in analyze_moves
+            for x in range(board_size_x)
+            for y in range(board_size_y)
+            if (x, y) not in stones or (x, y) == m.coords
+        ]
+        analyze_moves_pairs.extend((m, Move(None, player=cn.next_player)) for m in analyze_moves)
+
+        pair_idx = 0
+        visits = 1
+
+        def analyze_neighbour_states_node(error_analysis = None):
+            nonlocal pair_idx, cn
+            while True:
+                for x in cn.parent.children:
+                    if x.move == analyze_moves_pairs[pair_idx][0]:
+                        p_child = x
+                        break
+                else:
+                    p_child = GameNode(parent=cn.parent, move=analyze_moves_pairs[pair_idx][0])
+                for x in p_child.children:
+                    if x.move == analyze_moves_pairs[pair_idx][1]:
+                        pair_idx += 1
+                        if pair_idx >= len(analyze_moves_pairs):
+                            return
+                        break
+                else:
+                    break
+                    
+            o_child = GameNode(parent=p_child, move=analyze_moves_pairs[pair_idx][1])
+            pair_idx += 1
+
+            def save_neighbour_state_analysis(result, _partial):
+                o_child.set_analysis(result)
+                analyze_neighbour_states_node()
+
+            if pair_idx < len(analyze_moves_pairs):
+                self.engines[cn.player].request_analysis(
+                    o_child, callback=save_neighbour_state_analysis, priority=-1_000_000_000, visits=visits,
+                    error_callback=analyze_neighbour_states_node
+                )
+
+        self.katrain.controls.set_status(i18n._("nsweep analysis").format(visits=visits), STATUS_ANALYSIS)
+        analyze_neighbour_states_node()
 
     def play_to_end(self):
         cn = self.current_node

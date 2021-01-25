@@ -91,6 +91,16 @@ msgstr ""
 "Expected\n"
 "Territory"
 
+msgid "analysis:ndiffp"
+msgstr ""
+"Abs diff\n"
+"Player"
+
+msgid "analysis:ndiffo"
+msgstr ""
+"Abs diff\n"
+"Opponent"
+
 #. analysis menu items
 msgid "analysis:extra"
 msgstr "Deeper analysis"
@@ -100,6 +110,10 @@ msgstr "Equalize visits of potential moves"
 
 msgid "analysis:sweep"
 msgstr "Fast analysis of all moves"
+
+#. Very fast analysis of all neighbor states
+msgid "analysis:nsweep"
+msgstr "Neighbor sweep"
 
 #. Analyze every node in the game more deeply
 msgid "analysis:game"
@@ -141,6 +155,10 @@ msgstr "Performing additional analysis to {visits} visits"
 #. status message
 msgid "sweep analysis"
 msgstr "Analyzing entire board using {visits} visits/move"
+
+#. status message
+msgid "nsweep analysis"
+msgstr "Analyzing all neighbor board states using {visits} visits/move"
 
 #. status message
 msgid "alternative analysis"

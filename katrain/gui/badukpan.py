@@ -339,8 +339,80 @@ class BadukPanWidget(Widget):
 
         with self.canvas:
             self.canvas.clear()
-            # stones
             current_node = katrain.game.current_node
+            pass_btn = katrain.board_controls.pass_btn
+
+            # neighbor state absolute differences
+            if katrain.analysis_controls.ndiffp.active or katrain.analysis_controls.ndiffo.active:
+                if current_node.parent and current_node.parent.policy:
+                    move = current_node.move
+                    if move.is_pass:
+                        move_policy = current_node.parent.policy[-1]
+                    else:
+                        pn_policy_grid = var_to_grid(current_node.parent.policy, (board_size_x, board_size_y))
+                        move_policy = pn_policy_grid[move.coords[1]][move.coords[0]]
+                    player_pol_absdiff_grid = [[0 for x in range(board_size_x)] for y in range(board_size_y)]
+                    player_pol_absdiff_pass = 0
+                    opponent_pol_absdiff_grid = [[0 for x in range(board_size_x)] for y in range(board_size_y)]
+                    opponent_pol_absdiff_pass = 0
+                    count = 0
+                    for p_child in current_node.parent.children:
+                        if p_child == current_node:
+                            continue
+                        for o_child in p_child.children:
+                            if o_child.move.coords == move.coords or not o_child.policy:
+                                continue
+                            if move.is_pass:
+                                neighbour_move_policy = o_child.policy[-1]
+                            else:
+                                oc_policy_grid = var_to_grid(o_child.policy, (board_size_x, board_size_y))
+                                neighbour_move_policy = oc_policy_grid[move.coords[1]][move.coords[0]]
+                            move_policy_abs_diff = abs(neighbour_move_policy - move_policy)
+                            count += 1
+                            if p_child.move.is_pass:
+                                player_pol_absdiff_pass += move_policy_abs_diff
+                            else:
+                                player_pol_absdiff_grid[p_child.move.coords[1]][p_child.move.coords[0]] += move_policy_abs_diff
+                            if o_child.move.is_pass:
+                                opponent_pol_absdiff_pass += move_policy_abs_diff
+                            else:
+                                opponent_pol_absdiff_grid[o_child.move.coords[1]][o_child.move.coords[0]] += move_policy_abs_diff
+                    if count > 0:
+                        player_pol_absdiff_grid[:] = [[x / count for x in y] for y in player_pol_absdiff_grid]
+                        player_pol_absdiff_pass /= count
+                        opponent_pol_absdiff_grid[:] = [[x / count for x in y] for y in opponent_pol_absdiff_grid]
+                        opponent_pol_absdiff_pass /= count
+
+                    if katrain.analysis_controls.ndiffp.active and katrain.analysis_controls.ndiffo.active:
+                        pol_absdiff_grid = [[(player_pol_absdiff_grid[y][x] + opponent_pol_absdiff_grid[y][x]) / 2
+                                             for x in range(board_size_x)] for y in range(board_size_y)]
+                        pol_absdiff_pass = (player_pol_absdiff_pass + opponent_pol_absdiff_pass) / 2
+                    elif katrain.analysis_controls.ndiffp.active:
+                        pol_absdiff_grid = player_pol_absdiff_grid
+                        pol_absdiff_pass = player_pol_absdiff_pass
+                    else:
+                        pol_absdiff_grid = opponent_pol_absdiff_grid
+                        pol_absdiff_pass = opponent_pol_absdiff_pass
+
+                    max_pol_abs_diff = max(pol_absdiff_pass, max([max(y) for y in pol_absdiff_grid]))
+                    if max_pol_abs_diff > 0:
+                        pol_absdiff_grid[:] = [[x / max_pol_abs_diff for x in y] for y in pol_absdiff_grid]
+                        pol_absdiff_pass /= max_pol_abs_diff
+
+                    color = [0.1, 0.1, 0.9, 1]
+                    rsz = self.grid_size * 0.95
+                    for y in range(board_size_y - 1, -1, -1):
+                        for x in range(board_size_x):
+                            Color(*color[:3], pol_absdiff_grid[y][x])
+                            Rectangle(
+                                pos=(self.gridpos_x[x] - rsz / 2, self.gridpos_y[y] - rsz / 2), size=(rsz, rsz)
+                            )
+                    Color(*color[:3], pol_absdiff_pass)
+                    Rectangle(
+                        pos=(pass_btn.pos[0] - pass_btn.width, pass_btn.pos[1]), size=(pass_btn.width, pass_btn.height)
+                    )
+
+            # stones
             game_ended = katrain.game.end_result
             full_eval_on = katrain.analysis_controls.eval.active
             all_dots_off = katrain.analysis_controls.eval.checkbox.slashed
@@ -440,7 +512,6 @@ class BadukPanWidget(Widget):
                     current_node.parent.policy
                 )  # in the case of AI self-play we allow the policy to be one step out of date
 
-            pass_btn = katrain.board_controls.pass_btn
             pass_btn.canvas.after.clear()
             if katrain.analysis_controls.policy.active and policy:
                 policy_grid = var_to_grid(policy, (board_size_x, board_size_y))
@@ -489,7 +560,7 @@ class BadukPanWidget(Widget):
                             pass_btn.height / 2,
                             (*colors[pol_order][:3], Theme.GHOST_ALPHA),
                         )
-
+            
             # pass circle
             passed = len(nodes) > 1 and current_node.is_pass
             if passed or game_ended:
