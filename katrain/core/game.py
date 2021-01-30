@@ -568,59 +568,111 @@ class Game:
         stones = {s.coords for s in self.stones}
         
         board_size_x, board_size_y = self.board_size
-        analyze_moves = [
-            Move(coords=(x, y), player=cn.player)
-            for x in range(board_size_x)
-            for y in range(board_size_y)
-            if (x, y) not in stones 
-        ]
-        analyze_moves.append(cn.move)
-            
-        analyze_moves_pairs = [
-            (m, Move(coords=(x, y), player=cn.next_player)) 
-            for m in analyze_moves
-            for x in range(board_size_x)
-            for y in range(board_size_y)
-            if (x, y) not in stones or (x, y) == m.coords
-        ]
-        analyze_moves_pairs.extend((m, Move(None, player=cn.next_player)) for m in analyze_moves)
+        sibling_moves = [cn.move]
+        if not cn.move.is_pass:
+            sibling_moves.append(Move(None, player=cn.player))
+        pn = cn.parent
+        if pn and pn.analysis_exists:
+            policy_grid = (
+                var_to_grid(pn.policy, size=(board_size_x, board_size_y))
+                if pn.policy
+                else None
+            )
+            sibling_moves.extend(
+                sorted(
+                    [
+                        Move(coords=(x, y), player=cn.player)
+                        for x in range(board_size_x)
+                        for y in range(board_size_y)
+                        if ((policy_grid is None and (x, y) not in stones) or policy_grid[y][x] >= 0) and not (x, y) == cn.move.coords
+                    ],
+                    key=lambda mv: -policy_grid[mv.coords[1]][mv.coords[0]],
+                )
+            )
+            #limit width of search so it doesn't take forever. 30?
+            sibling_moves[:] = sibling_moves[:30]
+            #only doing analysis on NN outputs so only need 1 visit
+            visits = 1
+            self.katrain.controls.set_status(i18n._("nsweep analysis").format(visits=visits), STATUS_ANALYSIS)
 
-        pair_idx = 0
-        visits = 1
+            sibling_idx = 0
+            sibling_children = []
+            sibling_child_idx = 0
+            sn = None
 
-        def analyze_neighbour_states_node(error_analysis = None):
-            nonlocal pair_idx, cn
-            while True:
-                for x in cn.parent.children:
-                    if x.move == analyze_moves_pairs[pair_idx][0]:
-                        p_child = x
-                        break
-                else:
-                    p_child = GameNode(parent=cn.parent, move=analyze_moves_pairs[pair_idx][0])
-                for x in p_child.children:
-                    if x.move == analyze_moves_pairs[pair_idx][1]:
-                        pair_idx += 1
-                        if pair_idx >= len(analyze_moves_pairs):
+            def analyze_neighbour_states_node(error_analysis = None):
+                nonlocal sibling_moves, sibling_idx, sibling_children, sibling_child_idx, cn, pn, sn
+
+                def save_sibling_analysis(result, _partial):
+                    sn.set_analysis(result)
+                    analyze_neighbour_states_node()
+
+                def skip_sibling(error_analysis = None):
+                    sibling_idx += 1
+                    if sibling_idx < len(sibling_moves):
+                        analyze_neighbour_states_node()
+
+                while True:
+                    if sibling_child_idx == 0:
+                        if sibling_idx >= len(sibling_moves):
                             return
+                        for x in pn.children:
+                            if x.move == sibling_moves[sibling_idx]:
+                                sn = x
+                                break
+                        else:
+                            sn = GameNode(parent=pn, move=sibling_moves[sibling_idx])
+                            self.engines[sn.next_player].request_analysis(
+                                sn, callback=save_sibling_analysis, priority=-1_000_000_000, visits=visits,
+                                error_callback=skip_sibling
+                            )
+                            return
+                        sibling_idx += 1
+
+                        sn_policy_grid = (
+                            var_to_grid(sn.policy, size=(board_size_x, board_size_y))
+                            if pn.policy
+                            else None
+                        )
+                        sibling_children = [Move(None, player=cn.next_player)]
+                        sibling_children.extend(
+                                sorted(
+                                [
+                                    Move(coords=(x, y), player=cn.next_player)
+                                    for x in range(board_size_x)
+                                    for y in range(board_size_y)
+                                    if (sn_policy_grid is None and (x, y) not in stones) or sn_policy_grid[y][x] >= 0
+                                ],
+                                key=lambda mv: -sn_policy_grid[mv.coords[1]][mv.coords[0]],
+                            )
+                        )
+                        #limit width of search so it doesn't take forever. 30?
+                        sibling_children[:] = sibling_children[:30]
+
+                    for x in sn.children:
+                        if x.move == sibling_children[sibling_child_idx]:
+                            sibling_child_idx += 1
+                            if sibling_child_idx >= len(sibling_children):
+                                sibling_child_idx = 0
+                            break
+                    else:
                         break
-                else:
-                    break
-                    
-            o_child = GameNode(parent=p_child, move=analyze_moves_pairs[pair_idx][1])
-            pair_idx += 1
+                        
+                sibling_child = GameNode(parent=sn, move=sibling_children[sibling_child_idx])
+                sibling_child_idx += 1
+                if sibling_child_idx >= len(sibling_children):
+                    sibling_child_idx = 0
 
-            def save_neighbour_state_analysis(result, _partial):
-                o_child.set_analysis(result)
-                analyze_neighbour_states_node()
+                def save_neighbour_state_analysis(result, _partial):
+                    sibling_child.set_analysis(result)
+                    analyze_neighbour_states_node()
 
-            if pair_idx < len(analyze_moves_pairs):
-                self.engines[cn.player].request_analysis(
-                    o_child, callback=save_neighbour_state_analysis, priority=-1_000_000_000, visits=visits,
+                self.engines[sibling_child.next_player].request_analysis(
+                    sibling_child, callback=save_neighbour_state_analysis, priority=-1_000_000_000, visits=visits,
                     error_callback=analyze_neighbour_states_node
                 )
 
-        self.katrain.controls.set_status(i18n._("nsweep analysis").format(visits=visits), STATUS_ANALYSIS)
-        analyze_neighbour_states_node()
+            analyze_neighbour_states_node()
 
     def play_to_end(self):
         cn = self.current_node
