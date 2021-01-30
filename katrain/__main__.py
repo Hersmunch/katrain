@@ -529,7 +529,7 @@ class KaTrainGui(Screen, KaTrainBase):
             "e": self.analysis_controls.hints,
             "r": self.analysis_controls.policy,
             "t": self.analysis_controls.ownership,
-            "y": self.analysis_controls.ndiffp,
+            "y": self.analysis_controls.ndiff,
             "u": self.analysis_controls.ndiffo,
             "enter": ("ai-move",),
             "numpadenter": ("ai-move",),

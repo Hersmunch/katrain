@@ -343,74 +343,87 @@ class BadukPanWidget(Widget):
             pass_btn = katrain.board_controls.pass_btn
 
             # neighbor state absolute differences
-            if katrain.analysis_controls.ndiffp.active or katrain.analysis_controls.ndiffo.active:
-                if current_node.parent and current_node.parent.policy:
+            if katrain.analysis_controls.ndiff.active:
+                if current_node.parent:
                     move = current_node.move
-                    if move.is_pass:
-                        move_policy = current_node.parent.policy[-1]
-                    else:
-                        pn_policy_grid = var_to_grid(current_node.parent.policy, (board_size_x, board_size_y))
-                        move_policy = pn_policy_grid[move.coords[1]][move.coords[0]]
-                    player_pol_absdiff_grid = [[0 for x in range(board_size_x)] for y in range(board_size_y)]
-                    player_pol_absdiff_pass = 0
-                    opponent_pol_absdiff_grid = [[0 for x in range(board_size_x)] for y in range(board_size_y)]
-                    opponent_pol_absdiff_pass = 0
-                    count = 0
-                    for p_child in current_node.parent.children:
-                        if p_child == current_node:
-                            continue
-                        for o_child in p_child.children:
-                            if o_child.move.coords == move.coords or not o_child.policy:
-                                continue
+                    if katrain.analysis_controls.ndiffo.active: 
+                        if current_node.parent.ownership:
                             if move.is_pass:
-                                neighbour_move_policy = o_child.policy[-1]
+                                move_metric = current_node.parent.ownership[-1]
                             else:
-                                oc_policy_grid = var_to_grid(o_child.policy, (board_size_x, board_size_y))
-                                neighbour_move_policy = oc_policy_grid[move.coords[1]][move.coords[0]]
-                            move_policy_abs_diff = abs(neighbour_move_policy - move_policy)
-                            count += 1
-                            if p_child.move.is_pass:
-                                player_pol_absdiff_pass += move_policy_abs_diff
-                            else:
-                                player_pol_absdiff_grid[p_child.move.coords[1]][p_child.move.coords[0]] += move_policy_abs_diff
-                            if o_child.move.is_pass:
-                                opponent_pol_absdiff_pass += move_policy_abs_diff
-                            else:
-                                opponent_pol_absdiff_grid[o_child.move.coords[1]][o_child.move.coords[0]] += move_policy_abs_diff
-                    if count > 0:
-                        player_pol_absdiff_grid[:] = [[x / count for x in y] for y in player_pol_absdiff_grid]
-                        player_pol_absdiff_pass /= count
-                        opponent_pol_absdiff_grid[:] = [[x / count for x in y] for y in opponent_pol_absdiff_grid]
-                        opponent_pol_absdiff_pass /= count
-
-                    if katrain.analysis_controls.ndiffp.active and katrain.analysis_controls.ndiffo.active:
-                        pol_absdiff_grid = [[(player_pol_absdiff_grid[y][x] + opponent_pol_absdiff_grid[y][x]) / 2
-                                             for x in range(board_size_x)] for y in range(board_size_y)]
-                        pol_absdiff_pass = (player_pol_absdiff_pass + opponent_pol_absdiff_pass) / 2
-                    elif katrain.analysis_controls.ndiffp.active:
-                        pol_absdiff_grid = player_pol_absdiff_grid
-                        pol_absdiff_pass = player_pol_absdiff_pass
+                                parent_ownership_grid = var_to_grid(current_node.parent.policy, (board_size_x, board_size_y))
+                                move_metric = parent_ownership_grid[move.coords[1]][move.coords[0]]                        
                     else:
-                        pol_absdiff_grid = opponent_pol_absdiff_grid
-                        pol_absdiff_pass = opponent_pol_absdiff_pass
+                        if current_node.parent.policy:
+                            if move.is_pass:
+                                move_metric = current_node.parent.policy[-1]
+                            else:
+                                pn_policy_grid = var_to_grid(current_node.parent.policy, (board_size_x, board_size_y))
+                                move_metric = pn_policy_grid[move.coords[1]][move.coords[0]]
 
-                    max_pol_abs_diff = max(pol_absdiff_pass, max([max(y) for y in pol_absdiff_grid]))
-                    if max_pol_abs_diff > 0:
-                        pol_absdiff_grid[:] = [[x / max_pol_abs_diff for x in y] for y in pol_absdiff_grid]
-                        pol_absdiff_pass /= max_pol_abs_diff
+                    diff_grid = [[[0, 0, 0, 0] for x in range(board_size_x)] for y in range(board_size_y)]
+                    diff_pass = [0, 0, 0, 0]
+                    count = 0
+                    for sibling in current_node.parent.children:
+                        if sibling == current_node:
+                            continue
+                        for sibling_child in sibling.children:
+                            if sibling_child.move.coords == move.coords:
+                                continue
+                            if katrain.analysis_controls.ndiffo.active and not sibling_child.ownership:
+                                continue
+                            if (not katrain.analysis_controls.ndiffo.active) and not sibling_child.policy:
+                                continue
+                            count += 1
+                            if move.is_pass:
+                                if katrain.analysis_controls.ndiffo.active:
+                                    sibling_child_metric = 0
+                                else:
+                                    sibling_child_metric = sibling_child.policy[-1]
+                            else:
+                                if katrain.analysis_controls.ndiffo.active:
+                                    sibling_child_grid = var_to_grid(sibling_child.ownership, (board_size_x, board_size_y))
+                                else:
+                                    sibling_child_grid = var_to_grid(sibling_child.policy, (board_size_x, board_size_y))
+                                sibling_child_metric = sibling_child_grid[move.coords[1]][move.coords[0]]
+                            move_metric_abs_diff = abs(sibling_child_metric - move_metric)
+                            index = 0 if sibling_child_metric > move_metric else 1
+                            if sibling.move.is_pass:
+                                diff_pass[index] += move_metric_abs_diff
+                            else:
+                                diff_grid[sibling.move.coords[1]][sibling.move.coords[0]][index] += move_metric_abs_diff
+                            if sibling_child.move.is_pass:
+                                diff_pass[2 + index] += move_metric_abs_diff
+                            else:
+                                diff_grid[sibling_child.move.coords[1]][sibling_child.move.coords[0]][2 + index] += move_metric_abs_diff
+                    #if count > 0:
+                    #    diff_grid[:] = [[[n / count for n in x] for x in y] for y in diff_grid]
+                    #    diff_pass[:] = [n / count for n in diff_pass]
 
-                    color = [0.1, 0.1, 0.9, 1]
-                    rsz = self.grid_size * 0.95
-                    for y in range(board_size_y - 1, -1, -1):
-                        for x in range(board_size_x):
-                            Color(*color[:3], pol_absdiff_grid[y][x])
+                    max_abs_diff = max(max(diff_pass), max(max(max(x) for x in y) for y in diff_grid))
+                    if max_abs_diff > 0:
+                        diff_grid[:] = [[[n / max_abs_diff for n in x] for x in y] for y in diff_grid]
+                        diff_pass[:] = [n / max_abs_diff for n in diff_pass]
+
+                        color = [0.1, 0.1, 0.9, 1]
+                        rsz = self.grid_size * 0.95
+                        for y in range(board_size_y - 1, -1, -1):
+                            for x in range(board_size_x):
+                                for n in range(4):
+                                    Color(*color[:3], diff_grid[y][x][n])
+                                    Rectangle(
+                                        pos=(self.gridpos_x[x] - ((1 - int(n / 2)) * rsz / 2), 
+                                            self.gridpos_y[y] - (int(n % 2) * rsz / 2)), 
+                                        size=(rsz/2, rsz/2)
+                                    )
+                        color = [0.1, 0.9, 0.9, 1]
+                        for n in range(4):
+                            Color(*color[:3], diff_pass[n])
                             Rectangle(
-                                pos=(self.gridpos_x[x] - rsz / 2, self.gridpos_y[y] - rsz / 2), size=(rsz, rsz)
+                                pos=(pass_btn.pos[0] - ((2 - int(n / 2)) * pass_btn.width / 2), 
+                                    pass_btn.pos[1] + ((1 - int(n % 2)) * pass_btn.height / 2)),
+                                size=(pass_btn.width / 2, pass_btn.height / 2)
                             )
-                    Color(*color[:3], pol_absdiff_pass)
-                    Rectangle(
-                        pos=(pass_btn.pos[0] - pass_btn.width, pass_btn.pos[1]), size=(pass_btn.width, pass_btn.height)
-                    )
 
             # stones
             game_ended = katrain.game.end_result
